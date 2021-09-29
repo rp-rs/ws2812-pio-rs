@@ -9,7 +9,7 @@ license = "Apache-2.0"
 [dependencies]
 embedded-hal = "*"
 embedded-time = "*"
-rp2040-hal = {git="https://github.com/rp-rs/rp-hal.git"}
+rp2040-hal = { git = "https://github.com/rp-rs/rp-hal.git", branch = "main" }
 pio = { git = "https://github.com/rp-rs/pio-rs.git", branch = "main" }
 smart-leds-trait = "0.2.1"
 nb = "1.0.0"
