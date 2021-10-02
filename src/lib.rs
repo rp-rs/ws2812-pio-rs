@@ -7,27 +7,27 @@ use embedded_time::{
     duration::{Extensions, Microseconds},
     fixed_point::FixedPoint,
 };
-use rp2040_hal::pio::{Instance, PIO};
+use rp2040_hal::pio::{PIOExt, StateMachineIndex, Tx, UninitStateMachine, ValidStateMachine, PIO};
 use smart_leds_trait::SmartLedsWrite;
 
 /// Instance of WS2812 LED chain.
-pub struct Ws2812<P: Instance, C: CountDown> {
-    pio: PIO<P>,
+pub struct Ws2812<SM: ValidStateMachine, C: CountDown> {
+    tx: Tx<SM>,
     cd: C,
 }
 
-impl<P: Instance, C> Ws2812<P, C>
+impl<P: PIOExt, SM: StateMachineIndex, C> Ws2812<(P, SM), C>
 where
     C: CountDown,
 {
     /// Creates a new instance of this driver.
     pub fn new(
         pin_id: u8,
-        pio: P,
-        resets: &mut rp2040_hal::pac::RESETS,
+        pio: &mut PIO<P>,
+        pio_sm: UninitStateMachine<(P, SM)>,
         clock_freq: embedded_time::rate::Hertz,
         cd: C,
-    ) -> Ws2812<P, C> {
+    ) -> Ws2812<(P, SM), C> {
         // prepare the PIO program
         let side_set = pio::SideSet::new(false, 1, false);
         let mut a = pio::Assembler::<32>::new_with_side_set(side_set);
@@ -63,33 +63,31 @@ where
         a.bind(&mut wrap_source);
         let program = a.assemble_with_wrap(wrap_source, wrap_target);
 
-        // setup the PIO
-        let pio = rp2040_hal::pio::PIO::new(pio, resets);
-        let sm = &pio.state_machines()[0];
+        // Install the program into PIO instruction memory.
+        let installed = pio.install(&program).unwrap();
 
+        // Configure the PIO state machine.
         let div = clock_freq.integer() as f32 / (FREQ as f32 * CYCLES_PER_BIT as f32);
 
-        rp2040_hal::pio::PIOBuilder::default()
-            .with_program(&program)
+        let (pio_sm, _, tx) = rp2040_hal::pio::PIOBuilder::from_program(installed)
             // only use TX FIFO
             .buffers(rp2040_hal::pio::Buffers::OnlyTx)
             // Pin configuration
             .set_pins(pin_id, 1)
-            .side_set(side_set)
             .side_set_pin_base(pin_id)
             // OSR config
             .out_shift_direction(rp2040_hal::pio::ShiftDirection::Left)
             .autopull(true)
             .pull_threshold(24)
             .clock_divisor(div)
-            .build(&pio, sm)
-            .unwrap();
+            .build(pio_sm);
+        pio_sm.start();
 
-        Self { pio, cd }
+        Self { tx, cd }
     }
 }
 
-impl<P: Instance, C> SmartLedsWrite for Ws2812<P, C>
+impl<SM: ValidStateMachine, C> SmartLedsWrite for Ws2812<SM, C>
 where
     C: embedded_hal::timer::CountDown,
     C::Time: From<Microseconds>,
@@ -109,7 +107,7 @@ where
             let word =
                 (u32::from(color.g) << 24) | (u32::from(color.r) << 16) | (u32::from(color.b) << 8);
 
-            while !self.pio.state_machines()[0].write_tx(word) {
+            while !self.tx.write(word) {
                 cortex_m::asm::nop();
             }
         }
