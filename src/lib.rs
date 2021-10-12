@@ -16,6 +16,8 @@ pub struct Ws2812<SM: ValidStateMachine, C: CountDown> {
     cd: C,
 }
 
+unsafe impl<SM: ValidStateMachine, C: CountDown> Send for Ws2812<SM, C> {}
+
 impl<P: PIOExt, SM: StateMachineIndex, C> Ws2812<(P, SM), C>
 where
     C: CountDown,
