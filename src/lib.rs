@@ -6,10 +6,10 @@
 ///
 /// You should reach to the [Ws2812] if you run the main loop
 /// of your controller yourself and you want [Ws2812] to take
-/// ahold of your timer.
+/// a hold of your timer.
 ///
 /// In case you use `cortex-m-rtic` and can't afford this crate
-/// to wait blockingly for you, you should try [Ws2812Direct].
+/// to wait blocking for you, you should try [Ws2812Direct].
 /// Bear in mind that you will have to take care of timing requirements
 /// yourself then.
 
