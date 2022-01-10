@@ -4,7 +4,7 @@
 /// This driver implements driving a WS2812 RGB LED strip from
 /// a PIO device of the RP2040 chip.
 ///
-/// You should reach to the [Ws2812] if you run the main loop
+/// You should reach to [Ws2812] if you run the main loop
 /// of your controller yourself and you want [Ws2812] to take
 /// a hold of your timer.
 ///
