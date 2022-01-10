@@ -1,17 +1,17 @@
 #![no_std]
 //! WS2812 PIO Driver for the RP2040
-//!
-//! This driver implements driving a WS2812 RGB LED strip from
-//! a PIO device of the RP2040 chip.
-//!
-//! You should reach to the [Ws2812] if you run the main loop
-//! of your controller yourself and you want [Ws2812] to take
-//! ahold of your timer.
-//!
-//! In case you use `cortex-m-rtic` and can't afford this crate
-//! to wait blockingly for you, you should try [Ws2812Driver].
-//! Bear in mind that you will have to take care of timing requirements
-//! yourself then.
+///
+/// This driver implements driving a WS2812 RGB LED strip from
+/// a PIO device of the RP2040 chip.
+///
+/// You should reach to the [Ws2812] if you run the main loop
+/// of your controller yourself and you want [Ws2812] to take
+/// ahold of your timer.
+///
+/// In case you use `cortex-m-rtic` and can't afford this crate
+/// to wait blockingly for you, you should try [Ws2812Direct].
+/// Bear in mind that you will have to take care of timing requirements
+/// yourself then.
 
 use cortex_m;
 use embedded_hal::timer::CountDown;
@@ -31,7 +31,7 @@ use smart_leds_trait::SmartLedsWrite;
 /// the [Ws2812] struct instead of this raw driver.
 ///
 /// If you use this driver directly, you will need to
-/// take care of the timing expectations of the [Ws2812Driver::write]
+/// take care of the timing expectations of the [Ws2812Direct::write]
 /// method.
 ///
 /// Typical usage example:
@@ -41,7 +41,7 @@ use smart_leds_trait::SmartLedsWrite;
 /// let pins = rp2040_hal::gpio::pin::bank0::Pins::new(...);
 ///
 /// let (mut pio, sm0, _, _, _) = pac.PIO0.split(&mut pac.RESETS);
-/// let mut ws = Ws2812Driver::new(
+/// let mut ws = Ws2812Direct::new(
 ///     pins.gpio4.into_mode(),
 ///     &mut pio,
 ///     sm0,
@@ -57,7 +57,7 @@ use smart_leds_trait::SmartLedsWrite;
 ///     delay_for_at_least_60_microseconds();
 /// };
 ///```
-pub struct Ws2812Driver<P, SM, I>
+pub struct Ws2812Direct<P, SM, I>
 where
     I: PinId,
     P: PIOExt + FunctionConfig,
@@ -68,7 +68,7 @@ where
     _pin: Pin<I, Function<P>>,
 }
 
-impl<P, SM, I> Ws2812Driver<P, SM, I>
+impl<P, SM, I> Ws2812Direct<P, SM, I>
 where
     I: PinId,
     P: PIOExt + FunctionConfig,
@@ -135,7 +135,7 @@ where
     }
 }
 
-impl<P, SM, I> SmartLedsWrite for Ws2812Driver<P, SM, I>
+impl<P, SM, I> SmartLedsWrite for Ws2812Direct<P, SM, I>
 where
     I: PinId,
     P: PIOExt + FunctionConfig,
@@ -148,6 +148,9 @@ where
     /// at least 60 microseconds between calls of this function!
     /// That means, either you get hold on a timer and the timing
     /// requirements right your self, or rather use [Ws2812].
+    ///
+    /// Please bear in mind, that it still blocks when writing into the
+    /// PIO FIFO until all data has been transmitted to the LED chain.
     fn write<T, J>(&mut self, iterator: T) -> Result<(), ()>
     where
         T: Iterator<Item = J>,
@@ -205,7 +208,7 @@ where
     Function<P>: ValidPinMode<I>,
     SM: StateMachineIndex,
 {
-    driver: Ws2812Driver<P, SM, I>,
+    driver: Ws2812Direct<P, SM, I>,
     cd: C,
 }
 
@@ -225,7 +228,7 @@ where
         clock_freq: embedded_time::rate::Hertz,
         cd: C,
     ) -> Ws2812<P, SM, C, I> {
-        let driver = Ws2812Driver::new(pin, pio, sm, clock_freq);
+        let driver = Ws2812Direct::new(pin, pio, sm, clock_freq);
 
         Self { driver, cd }
     }
