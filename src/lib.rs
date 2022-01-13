@@ -1,17 +1,17 @@
 #![no_std]
 //! WS2812 PIO Driver for the RP2040
-///
-/// This driver implements driving a WS2812 RGB LED strip from
-/// a PIO device of the RP2040 chip.
-///
-/// You should reach to [Ws2812] if you run the main loop
-/// of your controller yourself and you want [Ws2812] to take
-/// a hold of your timer.
-///
-/// In case you use `cortex-m-rtic` and can't afford this crate
-/// to wait blocking for you, you should try [Ws2812Direct].
-/// Bear in mind that you will have to take care of timing requirements
-/// yourself then.
+//!
+//! This driver implements driving a WS2812 RGB LED strip from
+//! a PIO device of the RP2040 chip.
+//!
+//! You should reach to [Ws2812] if you run the main loop
+//! of your controller yourself and you want [Ws2812] to take
+//! a hold of your timer.
+//!
+//! In case you use `cortex-m-rtic` and can't afford this crate
+//! to wait blocking for you, you should try [Ws2812Direct].
+//! Bear in mind that you will have to take care of timing requirements
+//! yourself then.
 
 use cortex_m;
 use embedded_hal::timer::CountDown;
