@@ -104,7 +104,7 @@ where
         a.jmp_with_delay_and_side_set(pio::JmpCondition::Always, &mut wrap_target, T2 - 1, 1);
         a.bind(&mut do_zero);
         // Do data bit = 0
-        a.nop_with_delay_and_side_set(T2 - 2, 0);
+        a.nop_with_delay_and_side_set(T2 - 1, 0);
         a.bind(&mut wrap_source);
         let program = a.assemble_with_wrap(wrap_source, wrap_target);
 
