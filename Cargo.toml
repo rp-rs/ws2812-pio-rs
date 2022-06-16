@@ -5,7 +5,7 @@ edition = "2018"
 license = "Apache-2.0"
 description = "Driver implementation for the WS2812 smart LED using the RP2040's PIO peripheral."
 documentation =  "https://docs.rs/ws2812-pio"
-repository = "https://github.com/ithinuel/ws2812-pio-rs/"
+repository = "https://github.com/rp-rs/ws2812-pio-rs/"
 
 [dependencies]
 embedded-hal = "0.2.5"
