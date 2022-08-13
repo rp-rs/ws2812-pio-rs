@@ -15,10 +15,7 @@
 
 use cortex_m;
 use embedded_hal::timer::CountDown;
-use embedded_time::{
-    duration::{Extensions, Microseconds},
-    fixed_point::FixedPoint,
-};
+use fugit::{ExtU32, HertzU32};
 use rp2040_hal::{
     gpio::{Function, FunctionConfig, Pin, PinId, ValidPinMode},
     pio::{PIOExt, StateMachineIndex, Tx, UninitStateMachine, PIO},
@@ -80,7 +77,7 @@ where
         pin: Pin<I, Function<P>>,
         pio: &mut PIO<P>,
         sm: UninitStateMachine<(P, SM)>,
-        clock_freq: embedded_time::rate::Hertz,
+        clock_freq: fugit::HertzU32,
     ) -> Self {
         // prepare the PIO program
         let side_set = pio::SideSet::new(false, 1, false);
@@ -90,7 +87,7 @@ where
         const T2: u8 = 5; // data bit
         const T3: u8 = 3; // stop bit
         const CYCLES_PER_BIT: u32 = (T1 + T2 + T3) as u32;
-        const FREQ: u32 = 800_000;
+        const FREQ: HertzU32 = HertzU32::kHz(800u32);
 
         let mut wrap_target = a.label();
         let mut wrap_source = a.label();
@@ -112,7 +109,7 @@ where
         let installed = pio.install(&program).unwrap();
 
         // Configure the PIO state machine.
-        let div = clock_freq.integer() as f32 / (FREQ as f32 * CYCLES_PER_BIT as f32);
+        let div = (clock_freq.to_Hz() as f32) / ((FREQ * CYCLES_PER_BIT).to_Hz() as f32);
 
         let (mut sm, _, tx) = rp2040_hal::pio::PIOBuilder::from_program(installed)
             // only use TX FIFO
@@ -169,7 +166,6 @@ where
     }
 }
 
-
 /// Instance of a WS2812 LED chain.
 ///
 /// Use the [Ws2812::write] method to update the WS2812 LED chain.
@@ -225,7 +221,7 @@ where
         pin: Pin<I, Function<P>>,
         pio: &mut PIO<P>,
         sm: UninitStateMachine<(P, SM)>,
-        clock_freq: embedded_time::rate::Hertz,
+        clock_freq: fugit::HertzU32,
         cd: C,
     ) -> Ws2812<P, SM, C, I> {
         let driver = Ws2812Direct::new(pin, pio, sm, clock_freq);
@@ -234,11 +230,9 @@ where
     }
 }
 
-impl<P, SM, C, I> SmartLedsWrite for Ws2812<P, SM, C, I>
+impl<'timer, P, SM, I> SmartLedsWrite for Ws2812<P, SM, rp2040_hal::timer::CountDown<'timer>, I>
 where
     I: PinId,
-    C: CountDown,
-    C::Time: From<Microseconds>,
     P: PIOExt + FunctionConfig,
     Function<P>: ValidPinMode<I>,
     SM: StateMachineIndex,
@@ -250,7 +244,7 @@ where
         T: Iterator<Item = J>,
         J: Into<Self::Color>,
     {
-        self.cd.start(60.microseconds());
+        self.cd.start(60u32.millis());
         let _ = nb::block!(self.cd.wait());
 
         self.driver.write(iterator)
