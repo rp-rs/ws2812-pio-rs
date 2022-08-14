@@ -244,7 +244,7 @@ where
         T: Iterator<Item = J>,
         J: Into<Self::Color>,
     {
-        self.cd.start(60u32.millis());
+        self.cd.start(60u32.micros());
         let _ = nb::block!(self.cd.wait());
 
         self.driver.write(iterator)
