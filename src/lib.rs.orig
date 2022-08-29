@@ -17,6 +17,7 @@ use cortex_m;
 use embedded_hal::timer::CountDown;
 use fugit::{ExtU32, HertzU32};
 use rp2040_hal::{
+    clocks::SystemClock,
     gpio::{Function, FunctionConfig, Pin, PinId, ValidPinMode},
     pio::{PIOExt, StateMachineIndex, Tx, UninitStateMachine, PIO},
     Clock,
@@ -55,7 +56,7 @@ use smart_leds_trait::SmartLedsWrite;
 ///     delay_for_at_least_60_microseconds();
 /// };
 ///```
-pub struct Ws2812Direct<P, SM, I>
+pub struct Ws2812Direct<'clk, P, SM, I>
 where
     I: PinId,
     P: PIOExt + FunctionConfig,
@@ -64,9 +65,10 @@ where
 {
     tx: Tx<(P, SM)>,
     _pin: Pin<I, Function<P>>,
+    _clk: &'clk SystemClock,
 }
 
-impl<P, SM, I> Ws2812Direct<P, SM, I>
+impl<'clk, P, SM, I> Ws2812Direct<'clk, P, SM, I>
 where
     I: PinId,
     P: PIOExt + FunctionConfig,
@@ -78,7 +80,11 @@ where
         pin: Pin<I, Function<P>>,
         pio: &mut PIO<P>,
         sm: UninitStateMachine<(P, SM)>,
+<<<<<<< Updated upstream
+        system_clock: &'clk SystemClock,
+=======
         system_clock: &rp2040_hal::clocks::SystemClock,
+>>>>>>> Stashed changes
     ) -> Self {
         // prepare the PIO program
         let side_set = pio::SideSet::new(false, 1, false);
@@ -129,11 +135,15 @@ where
 
         sm.start();
 
-        Self { tx, _pin: pin }
+        Self {
+            tx,
+            _pin: pin,
+            _clk: system_clock,
+        }
     }
 }
 
-impl<P, SM, I> SmartLedsWrite for Ws2812Direct<P, SM, I>
+impl<P, SM, I> SmartLedsWrite for Ws2812Direct<'_, P, SM, I>
 where
     I: PinId,
     P: PIOExt + FunctionConfig,
@@ -197,7 +207,7 @@ where
 ///     // Do other stuff here...
 /// };
 ///```
-pub struct Ws2812<P, SM, C, I>
+pub struct Ws2812<'clk, P, SM, C, I>
 where
     I: PinId,
     C: CountDown,
@@ -205,11 +215,11 @@ where
     Function<P>: ValidPinMode<I>,
     SM: StateMachineIndex,
 {
-    driver: Ws2812Direct<P, SM, I>,
+    driver: Ws2812Direct<'clk, P, SM, I>,
     cd: C,
 }
 
-impl<P, SM, C, I> Ws2812<P, SM, C, I>
+impl<'clk, P, SM, C, I> Ws2812<'clk, P, SM, C, I>
 where
     I: PinId,
     C: CountDown,
@@ -222,16 +232,23 @@ where
         pin: Pin<I, Function<P>>,
         pio: &mut PIO<P>,
         sm: UninitStateMachine<(P, SM)>,
+<<<<<<< Updated upstream
+        clock_freq: &'clk SystemClock,
+        cd: C,
+    ) -> Self {
+        let driver = Ws2812Direct::new(pin, pio, sm, clock_freq);
+=======
         system_clock: &rp2040_hal::clocks::SystemClock,
         cd: C,
     ) -> Ws2812<P, SM, C, I> {
         let driver = Ws2812Direct::new(pin, pio, sm, system_clock);
+>>>>>>> Stashed changes
 
         Self { driver, cd }
     }
 }
 
-impl<'timer, P, SM, I> SmartLedsWrite for Ws2812<P, SM, rp2040_hal::timer::CountDown<'timer>, I>
+impl<P, SM, I> SmartLedsWrite for Ws2812<'_, P, SM, rp2040_hal::timer::CountDown<'_>, I>
 where
     I: PinId,
     P: PIOExt + FunctionConfig,
