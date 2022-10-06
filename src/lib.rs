@@ -87,7 +87,7 @@ where
         const T2: u8 = 5; // data bit
         const T3: u8 = 3; // stop bit
         const CYCLES_PER_BIT: u32 = (T1 + T2 + T3) as u32;
-        const FREQ: HertzU32 = HertzU32::kHz(800u32);
+        const FREQ: HertzU32 = HertzU32::kHz(800);
 
         let mut wrap_target = a.label();
         let mut wrap_source = a.label();
@@ -109,7 +109,23 @@ where
         let installed = pio.install(&program).unwrap();
 
         // Configure the PIO state machine.
-        let div = (clock_freq.to_Hz() as f32) / ((FREQ * CYCLES_PER_BIT).to_Hz() as f32);
+        let bit_freq = FREQ * CYCLES_PER_BIT;
+        let mut int = clock_freq / bit_freq;
+        let rem = clock_freq - (int * bit_freq);
+        let frac = (rem * 256) / bit_freq;
+        assert!(
+            (1..=65536).contains(&int) && (int != 65536 || frac == 0),
+            "(System Clock / {}) must be within [1.0, 65536.0].",
+            bit_freq.to_kHz()
+        );
+
+        // 65536.0 is represented as 0 in the pio's clock divider
+        if int == 65536 {
+            int = 0;
+        }
+        // Using lossy conversion because range have been checked
+        let int: u16 = int as u16;
+        let frac: u8 = frac as u8;
 
         let (mut sm, _, tx) = rp2040_hal::pio::PIOBuilder::from_program(installed)
             // only use TX FIFO
@@ -120,7 +136,7 @@ where
             .out_shift_direction(rp2040_hal::pio::ShiftDirection::Left)
             .autopull(true)
             .pull_threshold(24)
-            .clock_divisor(div)
+            .clock_divisor_fixed_point(int, frac)
             .build(sm);
 
         // Prepare pin's direction.
