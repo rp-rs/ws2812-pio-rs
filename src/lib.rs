@@ -1,7 +1,7 @@
 #![no_std]
 //! WS2812 PIO Driver for the RP2040
 //!
-//! This driver implements driving a WS2812 RGB LED strip from
+//! This driver implements driving a WS2812 RGB(W) LED strip from
 //! a PIO device of the RP2040 chip.
 //!
 //! You should reach to [Ws2812] if you run the main loop
@@ -13,6 +13,8 @@
 //! Bear in mind that you will have to take care of timing requirements
 //! yourself then.
 
+use core::marker::PhantomData;
+
 use cortex_m;
 use embedded_hal::timer::CountDown;
 use fugit::{ExtU32, HertzU32};
@@ -20,7 +22,31 @@ use rp2040_hal::{
     gpio::{Function, FunctionConfig, Pin, PinId, ValidPinMode},
     pio::{PIOExt, StateMachineIndex, Tx, UninitStateMachine, PIO},
 };
-use smart_leds_trait::SmartLedsWrite;
+use smart_leds_trait::{SmartLedsWrite, RGB8, RGBW};
+
+/// Defines how to serialize Color.
+pub trait Color {
+    fn bit_count() -> u8;
+    fn as_word(self) -> u32;
+}
+
+impl Color for smart_leds_trait::RGB8 {
+    fn bit_count() -> u8 {
+        24
+    }
+    fn as_word(self) -> u32 {
+        (u32::from(self.g) << 24) | (u32::from(self.r) << 16) | (u32::from(self.b) << 8)
+    }
+}
+
+impl Color for smart_leds_trait::RGBW<u8> {
+    fn bit_count() -> u8 {
+        32
+    }
+    fn as_word(self) -> u32 {
+        (u32::from(self.g) << 24) | (u32::from(self.r) << 16) | (u32::from(self.b) << 8) | u32::from(self.a.0)
+    }
+}
 
 /// This is the WS2812 PIO Driver.
 ///
@@ -54,26 +80,29 @@ use smart_leds_trait::SmartLedsWrite;
 ///     delay_for_at_least_60_microseconds();
 /// };
 ///```
-pub struct Ws2812Direct<P, SM, I>
+pub struct Ws2812Direct<P, SM, I, C = RGB8>
 where
     I: PinId,
     P: PIOExt + FunctionConfig,
     Function<P>: ValidPinMode<I>,
     SM: StateMachineIndex,
+    C: Color
 {
     tx: Tx<(P, SM)>,
     _pin: Pin<I, Function<P>>,
+    color: PhantomData<C>,
 }
 
-impl<P, SM, I> Ws2812Direct<P, SM, I>
+impl<P, SM, I, C> Ws2812Direct<P, SM, I, C>
 where
     I: PinId,
     P: PIOExt + FunctionConfig,
     Function<P>: ValidPinMode<I>,
     SM: StateMachineIndex,
+    C: Color,
 {
     /// Creates a new instance of this driver.
-    pub fn new(
+    fn new_generic(
         pin: Pin<I, Function<P>>,
         pio: &mut PIO<P>,
         sm: UninitStateMachine<(P, SM)>,
@@ -135,7 +164,7 @@ where
             // OSR config
             .out_shift_direction(rp2040_hal::pio::ShiftDirection::Left)
             .autopull(true)
-            .pull_threshold(24)
+            .pull_threshold(C::bit_count())
             .clock_divisor_fixed_point(int, frac)
             .build(sm);
 
@@ -144,18 +173,65 @@ where
 
         sm.start();
 
-        Self { tx, _pin: pin }
+        Self { tx, _pin: pin, color: PhantomData }
     }
 }
 
-impl<P, SM, I> SmartLedsWrite for Ws2812Direct<P, SM, I>
+impl<P, SM, I> Ws2812Direct<P, SM, I, RGB8>
 where
     I: PinId,
     P: PIOExt + FunctionConfig,
     Function<P>: ValidPinMode<I>,
     SM: StateMachineIndex,
 {
-    type Color = smart_leds_trait::RGB8;
+    /// Creates a new RGB8 instance of this driver.
+    pub fn new(
+        pin: Pin<I, Function<P>>,
+        pio: &mut PIO<P>,
+        sm: UninitStateMachine<(P, SM)>,
+        clock_freq: fugit::HertzU32,
+    ) -> Self {
+        Self::new_rgb8(pin, pio, sm, clock_freq)
+    }
+
+    /// Creates a new RGB8 instance of this driver.
+    pub fn new_rgb8(
+        pin: Pin<I, Function<P>>,
+        pio: &mut PIO<P>,
+        sm: UninitStateMachine<(P, SM)>,
+        clock_freq: fugit::HertzU32,
+    ) -> Self {
+        Self::new_generic(pin, pio, sm, clock_freq)
+    }
+}
+
+impl<P, SM, I> Ws2812Direct<P, SM, I, RGBW<u8>>
+where
+    I: PinId,
+    P: PIOExt + FunctionConfig,
+    Function<P>: ValidPinMode<I>,
+    SM: StateMachineIndex,
+{
+    /// Creates a new RGBW<u8> instance of this driver.
+    pub fn new_rgbw_u8(
+        pin: Pin<I, Function<P>>,
+        pio: &mut PIO<P>,
+        sm: UninitStateMachine<(P, SM)>,
+        clock_freq: fugit::HertzU32,
+    ) -> Self {
+        Self::new_generic(pin, pio, sm, clock_freq)
+    }
+}
+
+impl<P, SM, I, C> SmartLedsWrite for Ws2812Direct<P, SM, I, C>
+where
+    I: PinId,
+    P: PIOExt + FunctionConfig,
+    Function<P>: ValidPinMode<I>,
+    SM: StateMachineIndex,
+    C: Color,
+{
+    type Color = C;
     type Error = ();
     /// If you call this function, be advised that you will have to wait
     /// at least 60 microseconds between calls of this function!
@@ -171,8 +247,7 @@ where
     {
         for item in iterator {
             let color: Self::Color = item.into();
-            let word =
-                (u32::from(color.g) << 24) | (u32::from(color.r) << 16) | (u32::from(color.b) << 8);
+            let word = color.as_word();
 
             while !self.tx.write(word) {
                 cortex_m::asm::nop();
@@ -212,48 +287,102 @@ where
 ///     // Do other stuff here...
 /// };
 ///```
-pub struct Ws2812<P, SM, C, I>
+pub struct Ws2812<P, SM, CD, I, C = RGB8>
 where
     I: PinId,
-    C: CountDown,
+    CD: CountDown,
     P: PIOExt + FunctionConfig,
     Function<P>: ValidPinMode<I>,
     SM: StateMachineIndex,
+    C: Color,
 {
-    driver: Ws2812Direct<P, SM, I>,
-    cd: C,
+    driver: Ws2812Direct<P, SM, I, C>,
+    cd: CD,
 }
 
-impl<P, SM, C, I> Ws2812<P, SM, C, I>
+impl<P, SM, CD, I, C> Ws2812<P, SM, CD, I, C>
 where
     I: PinId,
-    C: CountDown,
+    CD: CountDown,
     P: PIOExt + FunctionConfig,
     Function<P>: ValidPinMode<I>,
     SM: StateMachineIndex,
+    C: Color,
 {
     /// Creates a new instance of this driver.
-    pub fn new(
+    fn new_generic(
         pin: Pin<I, Function<P>>,
         pio: &mut PIO<P>,
         sm: UninitStateMachine<(P, SM)>,
         clock_freq: fugit::HertzU32,
-        cd: C,
-    ) -> Ws2812<P, SM, C, I> {
-        let driver = Ws2812Direct::new(pin, pio, sm, clock_freq);
+        cd: CD,
+    ) -> Self {
+        let driver = Ws2812Direct::new_generic(pin, pio, sm, clock_freq);
 
         Self { driver, cd }
     }
 }
 
-impl<'timer, P, SM, I> SmartLedsWrite for Ws2812<P, SM, rp2040_hal::timer::CountDown<'timer>, I>
+impl<P, SM, CD, I> Ws2812<P, SM, CD, I, RGB8>
+where
+    I: PinId,
+    CD: CountDown,
+    P: PIOExt + FunctionConfig,
+    Function<P>: ValidPinMode<I>,
+    SM: StateMachineIndex,
+{
+    /// Creates a new RGB8 instance of this driver.
+    pub fn new(
+        pin: Pin<I, Function<P>>,
+        pio: &mut PIO<P>,
+        sm: UninitStateMachine<(P, SM)>,
+        clock_freq: fugit::HertzU32,
+        cd: CD,
+    ) -> Self {
+        Self::new_rgb8(pin, pio, sm, clock_freq, cd)
+    }
+
+    /// Creates a new RGB8 instance of this driver.
+    pub fn new_rgb8(
+        pin: Pin<I, Function<P>>,
+        pio: &mut PIO<P>,
+        sm: UninitStateMachine<(P, SM)>,
+        clock_freq: fugit::HertzU32,
+        cd: CD,
+    ) -> Self {
+        Self::new_generic(pin, pio, sm, clock_freq, cd)
+    }
+}
+
+impl<P, SM, CD, I> Ws2812<P, SM, CD, I, RGBW<u8>>
+where
+    I: PinId,
+    CD: CountDown,
+    P: PIOExt + FunctionConfig,
+    Function<P>: ValidPinMode<I>,
+    SM: StateMachineIndex,
+{
+    /// Creates a new RGBW<u8> instance of this driver.
+    pub fn new_rgbw_u8(
+        pin: Pin<I, Function<P>>,
+        pio: &mut PIO<P>,
+        sm: UninitStateMachine<(P, SM)>,
+        clock_freq: fugit::HertzU32,
+        cd: CD,
+    ) -> Self {
+        Self::new_generic(pin, pio, sm, clock_freq, cd)
+    }
+}
+
+impl<'timer, P, SM, I, C> SmartLedsWrite for Ws2812<P, SM, rp2040_hal::timer::CountDown<'timer>, I, C>
 where
     I: PinId,
     P: PIOExt + FunctionConfig,
     Function<P>: ValidPinMode<I>,
     SM: StateMachineIndex,
+    C: Color,
 {
-    type Color = smart_leds_trait::RGB8;
+    type Color = C;
     type Error = ();
     fn write<T, J>(&mut self, iterator: T) -> Result<(), ()>
     where
