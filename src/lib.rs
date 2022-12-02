@@ -260,6 +260,9 @@ where
         T: Iterator<Item = J>,
         J: Into<Self::Color>,
     {
+        self.driver.tx.clear_stalled_flag();
+        while !self.driver.tx.is_empty() && !self.driver.tx.has_stalled() {}
+
         self.cd.start(60u32.micros());
         let _ = nb::block!(self.cd.wait());
 
