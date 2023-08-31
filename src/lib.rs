@@ -15,7 +15,7 @@
 
 use cortex_m;
 use embedded_hal::timer::CountDown;
-use fugit::{ExtU32, HertzU32};
+use fugit::{ExtU32, HertzU32, MicrosDurationU32};
 use rp2040_hal::{
     gpio::AnyPin,
     pio::{PIOExt, StateMachineIndex, Tx, UninitStateMachine, PIO},
@@ -242,8 +242,10 @@ where
     }
 }
 
-impl<'timer, P, SM, I> SmartLedsWrite for Ws2812<P, SM, rp2040_hal::timer::CountDown<'timer>, I>
+impl<'timer, P, SM, I, C> SmartLedsWrite for Ws2812<P, SM, C, I>
 where
+    C: CountDown,
+    C::Time: From<MicrosDurationU32>,
     I: AnyPin<Function = P::PinFunction>,
     P: PIOExt,
     SM: StateMachineIndex,
