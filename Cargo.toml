@@ -8,9 +8,9 @@ documentation =  "https://docs.rs/ws2812-pio"
 repository = "https://github.com/rp-rs/ws2812-pio-rs/"
 
 [dependencies]
-embedded-hal = "0.2.5"
+embedded-hal = "1.0.0-alpha.11"
 fugit = "0.3.5"
-rp2040-hal = "0.9.0-alpha.1"
+rp2040-hal = { version = "0.9.0-alpha.1", features = [ "eh1_0_alpha", ] }
 pio = "0.2.0"
 smart-leds-trait = "0.2.1"
 nb = "1.0.0"
