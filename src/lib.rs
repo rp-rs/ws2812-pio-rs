@@ -13,7 +13,6 @@
 //! Bear in mind that you will have to take care of timing requirements
 //! yourself then.
 
-use cortex_m;
 use embedded_hal::timer::CountDown;
 use fugit::{ExtU32, HertzU32, MicrosDurationU32};
 use rp2040_hal::{
@@ -245,7 +244,7 @@ where
     }
 }
 
-impl<'timer, P, SM, I, C> SmartLedsWrite for Ws2812<P, SM, C, I>
+impl<P, SM, I, C> SmartLedsWrite for Ws2812<P, SM, C, I>
 where
     C: CountDown,
     C::Time: From<MicrosDurationU32>,
