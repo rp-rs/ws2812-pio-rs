@@ -143,7 +143,10 @@ where
 
         sm.start();
 
-        Self { tx, _pin: I::from(pin) }
+        Self {
+            tx,
+            _pin: I::from(pin),
+        }
     }
 }
 
