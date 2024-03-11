@@ -125,7 +125,7 @@ where
         let frac: u8 = frac as u8;
 
         let pin = pin.into();
-        let (mut sm, _, tx) = rp2040_hal::pio::PIOBuilder::from_program(installed)
+        let (mut sm, _, tx) = rp2040_hal::pio::PIOBuilder::from_installed_program(installed)
             // only use TX FIFO
             .buffers(rp2040_hal::pio::Buffers::OnlyTx)
             // Pin configuration
