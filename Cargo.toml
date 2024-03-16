@@ -1,6 +1,6 @@
 [package]
 name = "ws2812-pio"
-version = "0.7.0"
+version = "0.8.0"
 edition = "2021"
 license = "Apache-2.0"
 description = "Driver implementation for the WS2812 smart LED using the RP2040's PIO peripheral."
