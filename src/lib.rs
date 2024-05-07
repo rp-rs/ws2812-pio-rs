@@ -13,6 +13,7 @@
 //! Bear in mind that you will have to take care of timing requirements
 //! yourself then.
 
+use core::marker::PhantomData;
 use embedded_hal::timer::CountDown;
 use fugit::{ExtU32, HertzU32, MicrosDurationU32};
 use rp2040_hal::{
@@ -53,7 +54,31 @@ use smart_leds_trait::SmartLedsWrite;
 ///     delay_for_at_least_60_microseconds();
 /// };
 ///```
-pub struct Ws2812Direct<P, SM, I>
+///
+/// Typical RGBW usage example:
+///```ignore
+/// use rp2040_hal::clocks::init_clocks_and_plls;
+/// let clocks = init_clocks_and_plls(...);
+/// let pins = rp2040_hal::gpio::pin::bank0::Pins::new(...);
+///
+/// let (mut pio, sm0, _, _, _) = pac.PIO0.split(&mut pac.RESETS);
+/// let mut ws = Ws2812Direct::<_, _, _, smart_leds::RGBA8>::new(
+///     pins.gpio4.into_mode(),
+///     &mut pio,
+///     sm0,
+///     clocks.peripheral_clock.freq(),
+/// );
+///
+/// // Then you will make sure yourself to not write too frequently:
+/// loop {
+///     use smart_leds::{SmartLedsWrite, RGBA8};
+///     let color : RGBA8 = (255, 0, 255, 127).into();
+///
+///     ws.write([color].iter().copied()).unwrap();
+///     delay_for_at_least_60_microseconds();
+/// };
+///```
+pub struct Ws2812Direct<P, SM, I, CF = smart_leds_trait::RGB8>
 where
     I: AnyPin<Function = P::PinFunction>,
     P: PIOExt,
@@ -61,13 +86,15 @@ where
 {
     tx: Tx<(P, SM)>,
     _pin: I,
+    _color_format: PhantomData<CF>,
 }
 
-impl<P, SM, I> Ws2812Direct<P, SM, I>
+impl<P, SM, I, CF> Ws2812Direct<P, SM, I, CF>
 where
     I: AnyPin<Function = P::PinFunction>,
     P: PIOExt,
     SM: StateMachineIndex,
+    CF: ColorFormat,
 {
     /// Creates a new instance of this driver.
     pub fn new(
@@ -133,7 +160,7 @@ where
             // OSR config
             .out_shift_direction(rp2040_hal::pio::ShiftDirection::Left)
             .autopull(true)
-            .pull_threshold(24)
+            .pull_threshold(<CF as ColorFormat>::COLOR_BYTES.num_bits())
             .clock_divisor_fixed_point(int, frac)
             .build(sm);
 
@@ -145,17 +172,63 @@ where
         Self {
             tx,
             _pin: I::from(pin),
+            _color_format: PhantomData,
         }
     }
 }
 
-impl<P, SM, I> SmartLedsWrite for Ws2812Direct<P, SM, I>
+/// Specify whether to use 3 or 4 bytes per led color.
+pub enum ColorBytes {
+    ThreeBytes,
+    FourBytes,
+}
+
+impl ColorBytes {
+    const fn num_bits(&self) -> u8 {
+        match self {
+            ColorBytes::ThreeBytes => 24,
+            ColorBytes::FourBytes => 32,
+        }
+    }
+}
+
+/// Implement this trait to support a user-defined color format.
+///
+/// smart_leds::RGB8 and smart_leds::RGBA are implemented by the ws2812-pio
+/// crate.
+pub trait ColorFormat {
+    /// Select the number of bytes per led.
+    const COLOR_BYTES: ColorBytes;
+
+    /// Map the color to a 32-bit word.
+    fn to_word(self) -> u32;
+}
+
+impl ColorFormat for smart_leds_trait::RGB8 {
+    const COLOR_BYTES: ColorBytes = ColorBytes::ThreeBytes;
+    fn to_word(self) -> u32 {
+        (u32::from(self.g) << 24) | (u32::from(self.r) << 16) | (u32::from(self.b) << 8)
+    }
+}
+
+impl ColorFormat for smart_leds_trait::RGBA<u8> {
+    const COLOR_BYTES: ColorBytes = ColorBytes::FourBytes;
+    fn to_word(self) -> u32 {
+        (u32::from(self.g) << 24)
+            | (u32::from(self.r) << 16)
+            | (u32::from(self.b) << 8)
+            | (u32::from(self.a))
+    }
+}
+
+impl<P, SM, I, CF> SmartLedsWrite for Ws2812Direct<P, SM, I, CF>
 where
     I: AnyPin<Function = P::PinFunction>,
     P: PIOExt,
     SM: StateMachineIndex,
+    CF: ColorFormat,
 {
-    type Color = smart_leds_trait::RGB8;
+    type Color = CF;
     type Error = ();
     /// If you call this function, be advised that you will have to wait
     /// at least 60 microseconds between calls of this function!
@@ -166,13 +239,12 @@ where
     /// PIO FIFO until all data has been transmitted to the LED chain.
     fn write<T, J>(&mut self, iterator: T) -> Result<(), ()>
     where
-        T: Iterator<Item = J>,
+        T: IntoIterator<Item = J>,
         J: Into<Self::Color>,
     {
         for item in iterator {
             let color: Self::Color = item.into();
-            let word =
-                (u32::from(color.g) << 24) | (u32::from(color.r) << 16) | (u32::from(color.b) << 8);
+            let word = color.to_word();
 
             while !self.tx.write(word) {
                 cortex_m::asm::nop();
@@ -212,23 +284,51 @@ where
 ///     // Do other stuff here...
 /// };
 ///```
-pub struct Ws2812<P, SM, C, I>
+///
+/// Typical RGBW usage example:
+///```ignore
+/// use rp2040_hal::clocks::init_clocks_and_plls;
+/// let clocks = init_clocks_and_plls(...);
+/// let pins = rp2040_hal::gpio::pin::bank0::Pins::new(...);
+///
+/// let timer = Timer::new(pac.TIMER, &mut pac.RESETS);
+///
+/// let (mut pio, sm0, _, _, _) = pac.PIO0.split(&mut pac.RESETS);
+/// let mut ws = Ws2812::<_, _, _, _, smart_leds::RGBA8>::new(
+///     pins.gpio4.into_mode(),
+///     &mut pio,
+///     sm0,
+///     clocks.peripheral_clock.freq(),
+///     timer.count_down(),
+/// );
+///
+/// loop {
+///     use smart_leds::{SmartLedsWrite, RGBA8};
+///     let color : RGBA8 = (255, 0, 255, 127).into();
+///
+///     ws.write([color].iter().copied()).unwrap();
+///
+///     // Do other stuff here...
+/// };
+///```
+pub struct Ws2812<P, SM, C, I, CF = smart_leds_trait::RGB8>
 where
     C: CountDown,
     I: AnyPin<Function = P::PinFunction>,
     P: PIOExt,
     SM: StateMachineIndex,
 {
-    driver: Ws2812Direct<P, SM, I>,
+    driver: Ws2812Direct<P, SM, I, CF>,
     cd: C,
 }
 
-impl<P, SM, C, I> Ws2812<P, SM, C, I>
+impl<P, SM, C, I, CF> Ws2812<P, SM, C, I, CF>
 where
     C: CountDown,
     I: AnyPin<Function = P::PinFunction>,
     P: PIOExt,
     SM: StateMachineIndex,
+    CF: ColorFormat,
 {
     /// Creates a new instance of this driver.
     pub fn new(
@@ -237,26 +337,27 @@ where
         sm: UninitStateMachine<(P, SM)>,
         clock_freq: fugit::HertzU32,
         cd: C,
-    ) -> Ws2812<P, SM, C, I> {
+    ) -> Ws2812<P, SM, C, I, CF> {
         let driver = Ws2812Direct::new(pin, pio, sm, clock_freq);
 
         Self { driver, cd }
     }
 }
 
-impl<P, SM, I, C> SmartLedsWrite for Ws2812<P, SM, C, I>
+impl<P, SM, I, C, CF> SmartLedsWrite for Ws2812<P, SM, C, I, CF>
 where
     C: CountDown,
     C::Time: From<MicrosDurationU32>,
     I: AnyPin<Function = P::PinFunction>,
     P: PIOExt,
     SM: StateMachineIndex,
+    CF: ColorFormat,
 {
-    type Color = smart_leds_trait::RGB8;
+    type Color = CF;
     type Error = ();
     fn write<T, J>(&mut self, iterator: T) -> Result<(), ()>
     where
-        T: Iterator<Item = J>,
+        T: IntoIterator<Item = J>,
         J: Into<Self::Color>,
     {
         self.driver.tx.clear_stalled_flag();
