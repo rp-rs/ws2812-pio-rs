@@ -204,7 +204,8 @@ where
 /// );
 ///
 /// loop {
-///     use smart_leds::{SmartLedsWrite, RGB8};
+///     use smart_leds::RGB8;
+///     use smart_leds_trait::SmartLedsWrite;
 ///     let color : RGB8 = (255, 0, 255).into();
 ///
 ///     ws.write([color].iter().copied()).unwrap();
