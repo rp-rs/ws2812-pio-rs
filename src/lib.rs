@@ -49,7 +49,7 @@ use smart_leds_trait::SmartLedsWrite;
 ///     use smart_leds::{SmartLedsWrite, RGB8};
 ///     let color : RGB8 = (255, 0, 255).into();
 ///
-///     ws.write([color].iter().copied()).unwrap();
+///     ws.write([color]).unwrap();
 ///     delay_for_at_least_60_microseconds();
 /// };
 ///```
@@ -166,7 +166,7 @@ where
     /// PIO FIFO until all data has been transmitted to the LED chain.
     fn write<T, J>(&mut self, iterator: T) -> Result<(), ()>
     where
-        T: Iterator<Item = J>,
+        T: IntoIterator<Item = J>,
         J: Into<Self::Color>,
     {
         for item in iterator {
@@ -256,7 +256,7 @@ where
     type Error = ();
     fn write<T, J>(&mut self, iterator: T) -> Result<(), ()>
     where
-        T: Iterator<Item = J>,
+        T: IntoIterator<Item = J>,
         J: Into<Self::Color>,
     {
         self.driver.tx.clear_stalled_flag();
