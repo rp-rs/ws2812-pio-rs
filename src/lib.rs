@@ -49,10 +49,26 @@ use smart_leds_trait::SmartLedsWrite;
 ///     use smart_leds::{SmartLedsWrite, RGB8};
 ///     let color : RGB8 = (255, 0, 255).into();
 ///
-///     ws.write([color].iter().copied()).unwrap();
+///     ws.write([color]).unwrap();
 ///     delay_for_at_least_60_microseconds();
 /// };
 ///```
+///
+/// // It is possible to change the color ordering by using
+/// // the constructor ```new_with_chip_config``` along with the
+/// // ordering enum ```Ws2812ColorOrder```:
+///```ignore
+/// let mut ws = Ws2812Direct::new_with_chip_config(
+///     pins.gpio4.into_mode(),
+///     &mut pio,
+///     sm0,
+///     clocks.peripheral_clock.freq(),
+///     Ws2812ColorOrder::RGB,
+/// );
+/// ```
+mod ws2812_color_order;
+pub use ws2812_color_order::Ws2812ColorOrder;
+
 pub struct Ws2812Direct<P, SM, I>
 where
     I: AnyPin<Function = P::PinFunction>,
@@ -61,6 +77,7 @@ where
 {
     tx: Tx<(P, SM)>,
     _pin: I,
+    _converter: Ws2812ColorOrder,
 }
 
 impl<P, SM, I> Ws2812Direct<P, SM, I>
@@ -75,6 +92,16 @@ where
         pio: &mut PIO<P>,
         sm: UninitStateMachine<(P, SM)>,
         clock_freq: fugit::HertzU32,
+    ) -> Self {
+        Ws2812Direct::new_with_chip_config(pin, pio, sm, clock_freq, Ws2812ColorOrder::GRB)
+    }
+    /// Creates a new instance of this driver.
+    pub fn new_with_chip_config(
+        pin: I,
+        pio: &mut PIO<P>,
+        sm: UninitStateMachine<(P, SM)>,
+        clock_freq: fugit::HertzU32,
+        chip_config: Ws2812ColorOrder,
     ) -> Self {
         // prepare the PIO program
         let side_set = pio::SideSet::new(false, 1, false);
@@ -145,6 +172,7 @@ where
         Self {
             tx,
             _pin: I::from(pin),
+            _converter: chip_config,
         }
     }
 }
@@ -166,15 +194,13 @@ where
     /// PIO FIFO until all data has been transmitted to the LED chain.
     fn write<T, J>(&mut self, iterator: T) -> Result<(), ()>
     where
-        T: Iterator<Item = J>,
+        T: IntoIterator<Item = J>,
         J: Into<Self::Color>,
     {
         for item in iterator {
             let color: Self::Color = item.into();
-            let word =
-                (u32::from(color.g) << 24) | (u32::from(color.r) << 16) | (u32::from(color.b) << 8);
 
-            while !self.tx.write(word) {
+            while !self.tx.write(self._converter._get_color_value(&color)) {
                 cortex_m::asm::nop();
             }
         }
@@ -212,6 +238,20 @@ where
 ///     // Do other stuff here...
 /// };
 ///```
+///
+/// // It is possible to change the color ordering by using
+/// // the constructor ```new_with_chip_config``` along with the
+/// // ordering enum ```Ws2812ColorOrder```:
+///```ignore
+/// let mut ws = Ws2812::new_with_chip_config(
+///     pins.gpio4.into_mode(),
+///     &mut pio,
+///     sm0,
+///     clocks.peripheral_clock.freq(),
+///     timer.count_down(),
+///     Ws2812ColorOrder::RGB,
+/// );
+/// ```
 pub struct Ws2812<P, SM, C, I>
 where
     C: CountDown,
@@ -242,6 +282,20 @@ where
 
         Self { driver, cd }
     }
+
+    /// Creates a new instance of this driver.
+    pub fn new_with_chip_config(
+        pin: I,
+        pio: &mut PIO<P>,
+        sm: UninitStateMachine<(P, SM)>,
+        clock_freq: fugit::HertzU32,
+        cd: C,
+        chip_config: Ws2812ColorOrder,
+    ) -> Ws2812<P, SM, C, I> {
+        let driver = Ws2812Direct::new_with_chip_config(pin, pio, sm, clock_freq, chip_config);
+
+        Self { driver, cd }
+    }
 }
 
 impl<P, SM, I, C> SmartLedsWrite for Ws2812<P, SM, C, I>
@@ -256,7 +310,7 @@ where
     type Error = ();
     fn write<T, J>(&mut self, iterator: T) -> Result<(), ()>
     where
-        T: Iterator<Item = J>,
+        T: IntoIterator<Item = J>,
         J: Into<Self::Color>,
     {
         self.driver.tx.clear_stalled_flag();
