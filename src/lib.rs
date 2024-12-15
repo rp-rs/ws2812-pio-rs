@@ -20,6 +20,7 @@ use rp2040_hal::{
     pio::{PIOExt, StateMachineIndex, Tx, UninitStateMachine, PIO},
 };
 use smart_leds_trait::SmartLedsWrite;
+use smart_leds_trait_0_2::SmartLedsWrite as SmartLedsWrite02;
 
 /// This is the WS2812 PIO Driver.
 ///
@@ -166,7 +167,7 @@ where
     /// PIO FIFO until all data has been transmitted to the LED chain.
     fn write<T, J>(&mut self, iterator: T) -> Result<(), ()>
     where
-        T: Iterator<Item = J>,
+        T: IntoIterator<Item = J>,
         J: Into<Self::Color>,
     {
         for item in iterator {
@@ -179,6 +180,30 @@ where
             }
         }
         Ok(())
+    }
+}
+
+impl<P, SM, I> SmartLedsWrite02 for Ws2812Direct<P, SM, I>
+where
+    I: AnyPin<Function = P::PinFunction>,
+    P: PIOExt,
+    SM: StateMachineIndex,
+{
+    type Color = smart_leds_trait::RGB8;
+    type Error = ();
+    /// If you call this function, be advised that you will have to wait
+    /// at least 60 microseconds between calls of this function!
+    /// That means, either you get hold on a timer and the timing
+    /// requirements right your self, or rather use [Ws2812].
+    ///
+    /// Please bear in mind, that it still blocks when writing into the
+    /// PIO FIFO until all data has been transmitted to the LED chain.
+    fn write<T, J>(&mut self, iterator: T) -> Result<(), ()>
+    where
+        T: Iterator<Item = J>,
+        J: Into<Self::Color>,
+    {
+        SmartLedsWrite::write(self, iterator)
     }
 }
 
@@ -256,7 +281,7 @@ where
     type Error = ();
     fn write<T, J>(&mut self, iterator: T) -> Result<(), ()>
     where
-        T: Iterator<Item = J>,
+        T: IntoIterator<Item = J>,
         J: Into<Self::Color>,
     {
         self.driver.tx.clear_stalled_flag();
@@ -265,6 +290,25 @@ where
         self.cd.start(60u32.micros());
         let _ = nb::block!(self.cd.wait());
 
-        self.driver.write(iterator)
+        SmartLedsWrite::write(&mut self.driver, iterator)
+    }
+}
+
+impl<P, SM, I, C> SmartLedsWrite02 for Ws2812<P, SM, C, I>
+where
+    C: CountDown,
+    C::Time: From<MicrosDurationU32>,
+    I: AnyPin<Function = P::PinFunction>,
+    P: PIOExt,
+    SM: StateMachineIndex,
+{
+    type Color = smart_leds_trait::RGB8;
+    type Error = ();
+    fn write<T, J>(&mut self, iterator: T) -> Result<(), ()>
+    where
+        T: IntoIterator<Item = J>,
+        J: Into<Self::Color>,
+    {
+        SmartLedsWrite::write(self, iterator)
     }
 }
