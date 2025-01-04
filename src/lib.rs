@@ -13,8 +13,8 @@
 //! Bear in mind that you will have to take care of timing requirements
 //! yourself then.
 
-use embedded_hal::timer::CountDown;
-use fugit::{ExtU32, HertzU32, MicrosDurationU32};
+use embedded_hal::delay::DelayNs;
+use fugit::HertzU32;
 use rp2040_hal::{
     gpio::AnyPin,
     pio::{PIOExt, StateMachineIndex, Tx, UninitStateMachine, PIO},
@@ -239,18 +239,18 @@ where
 ///```
 pub struct Ws2812<P, SM, C, I>
 where
-    C: CountDown,
+    C: DelayNs,
     I: AnyPin<Function = P::PinFunction>,
     P: PIOExt,
     SM: StateMachineIndex,
 {
     driver: Ws2812Direct<P, SM, I>,
-    cd: C,
+    timer: C,
 }
 
 impl<P, SM, C, I> Ws2812<P, SM, C, I>
 where
-    C: CountDown,
+    C: DelayNs,
     I: AnyPin<Function = P::PinFunction>,
     P: PIOExt,
     SM: StateMachineIndex,
@@ -261,18 +261,17 @@ where
         pio: &mut PIO<P>,
         sm: UninitStateMachine<(P, SM)>,
         clock_freq: fugit::HertzU32,
-        cd: C,
+        timer: C,
     ) -> Ws2812<P, SM, C, I> {
         let driver = Ws2812Direct::new(pin, pio, sm, clock_freq);
 
-        Self { driver, cd }
+        Self { driver, timer }
     }
 }
 
 impl<P, SM, I, C> SmartLedsWrite for Ws2812<P, SM, C, I>
 where
-    C: CountDown,
-    C::Time: From<MicrosDurationU32>,
+    C: DelayNs,
     I: AnyPin<Function = P::PinFunction>,
     P: PIOExt,
     SM: StateMachineIndex,
@@ -287,17 +286,14 @@ where
         self.driver.tx.clear_stalled_flag();
         while !self.driver.tx.is_empty() && !self.driver.tx.has_stalled() {}
 
-        self.cd.start(60u32.micros());
-        let _ = nb::block!(self.cd.wait());
-
+        self.timer.delay_us(60);
         SmartLedsWrite::write(&mut self.driver, iterator)
     }
 }
 
 impl<P, SM, I, C> SmartLedsWrite02 for Ws2812<P, SM, C, I>
 where
-    C: CountDown,
-    C::Time: From<MicrosDurationU32>,
+    C: DelayNs,
     I: AnyPin<Function = P::PinFunction>,
     P: PIOExt,
     SM: StateMachineIndex,
