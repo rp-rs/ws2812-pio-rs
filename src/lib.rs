@@ -15,8 +15,20 @@
 
 use embedded_hal::timer::CountDown;
 use fugit::{ExtU32, HertzU32, MicrosDurationU32};
-#[cfg(feature = "rp2040")]
-use rp2040_hal::{
+
+use cfg_if::cfg_if;
+
+cfg_if! {
+    if #[cfg(feature = "rp2040")] {
+        use rp2040_hal as hal;
+    } else if #[cfg(feature = "rp235x")] {
+        use rp235x_hal as hal;
+    } else {
+        compile_error!("Either 'rp2040' or 'rp235x' feature must be enabled.");
+    }
+}
+
+use hal::{
     gpio::AnyPin,
     pio::{PIOExt, StateMachineIndex, Tx, UninitStateMachine, PIO},
 };
@@ -35,9 +47,9 @@ use smart_leds_trait_0_2::SmartLedsWrite as SmartLedsWrite02;
 ///
 /// Typical usage example:
 ///```ignore
-/// use rp2040_hal::clocks::init_clocks_and_plls;
+/// use hal::clocks::init_clocks_and_plls;
 /// let clocks = init_clocks_and_plls(...);
-/// let pins = rp2040_hal::gpio::pin::bank0::Pins::new(...);
+/// let pins = hal::gpio::pin::bank0::Pins::new(...);
 ///
 /// let (mut pio, sm0, _, _, _) = pac.PIO0.split(&mut pac.RESETS);
 /// let mut ws = Ws2812Direct::new(
@@ -56,7 +68,7 @@ use smart_leds_trait_0_2::SmartLedsWrite as SmartLedsWrite02;
 ///     delay_for_at_least_60_microseconds();
 /// };
 ///```
-#[cfg(feature = "rp2040")]
+
 pub struct Ws2812Direct<P, SM, I>
 where
     I: AnyPin<Function = P::PinFunction>,
@@ -67,7 +79,6 @@ where
     _pin: I,
 }
 
-#[cfg(feature = "rp2040")]
 impl<P, SM, I> Ws2812Direct<P, SM, I>
 where
     I: AnyPin<Function = P::PinFunction>,
@@ -130,20 +141,20 @@ where
         let frac: u8 = frac as u8;
 
         let pin = pin.into();
-        let (mut sm, _, tx) = rp2040_hal::pio::PIOBuilder::from_installed_program(installed)
+        let (mut sm, _, tx) = hal::pio::PIOBuilder::from_installed_program(installed)
             // only use TX FIFO
-            .buffers(rp2040_hal::pio::Buffers::OnlyTx)
+            .buffers(hal::pio::Buffers::OnlyTx)
             // Pin configuration
             .side_set_pin_base(pin.id().num)
             // OSR config
-            .out_shift_direction(rp2040_hal::pio::ShiftDirection::Left)
+            .out_shift_direction(hal::pio::ShiftDirection::Left)
             .autopull(true)
             .pull_threshold(24)
             .clock_divisor_fixed_point(int, frac)
             .build(sm);
 
         // Prepare pin's direction.
-        sm.set_pindirs([(pin.id().num, rp2040_hal::pio::PinDir::Output)]);
+        sm.set_pindirs([(pin.id().num, hal::pio::PinDir::Output)]);
 
         sm.start();
 
@@ -154,7 +165,6 @@ where
     }
 }
 
-#[cfg(feature = "rp2040")]
 impl<P, SM, I> SmartLedsWrite for Ws2812Direct<P, SM, I>
 where
     I: AnyPin<Function = P::PinFunction>,
@@ -188,7 +198,6 @@ where
     }
 }
 
-#[cfg(feature = "rp2040")]
 impl<P, SM, I> SmartLedsWrite02 for Ws2812Direct<P, SM, I>
 where
     I: AnyPin<Function = P::PinFunction>,
@@ -219,9 +228,9 @@ where
 ///
 /// Typical usage example:
 ///```ignore
-/// use rp2040_hal::clocks::init_clocks_and_plls;
+/// use hal::clocks::init_clocks_and_plls;
 /// let clocks = init_clocks_and_plls(...);
-/// let pins = rp2040_hal::gpio::pin::bank0::Pins::new(...);
+/// let pins = hal::gpio::pin::bank0::Pins::new(...);
 ///
 /// let timer = Timer::new(pac.TIMER, &mut pac.RESETS);
 ///
@@ -243,7 +252,7 @@ where
 ///     // Do other stuff here...
 /// };
 ///```
-#[cfg(feature = "rp2040")]
+
 pub struct Ws2812<P, SM, C, I>
 where
     C: CountDown,
@@ -255,7 +264,6 @@ where
     cd: C,
 }
 
-#[cfg(feature = "rp2040")]
 impl<P, SM, C, I> Ws2812<P, SM, C, I>
 where
     C: CountDown,
@@ -276,7 +284,6 @@ where
         Self { driver, cd }
     }
 }
-#[cfg(feature = "rp2040")]
 impl<P, SM, I, C> SmartLedsWrite for Ws2812<P, SM, C, I>
 where
     C: CountDown,
@@ -301,7 +308,6 @@ where
         SmartLedsWrite::write(&mut self.driver, iterator)
     }
 }
-#[cfg(feature = "rp2040")]
 impl<P, SM, I, C> SmartLedsWrite02 for Ws2812<P, SM, C, I>
 where
     C: CountDown,
@@ -320,7 +326,3 @@ where
         SmartLedsWrite::write(self, iterator)
     }
 }
-
-
-#[cfg(feature = "rp235x")]
-pub mod rp235x;
